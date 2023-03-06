@@ -1,0 +1,209 @@
+name: Rust
+
+on:
+  push:
+    # Run jobs when commits are pushed to
+    # master or release-like branches:
+    branches:
+      - master
+  pull_request:
+    # Run jobs for any external PR that wants
+    # to merge to master, too:
+    branches:
+      - master
+
+env:
+  CARGO_TERM_COLOR: always
+  # TODO: Currently pointing at latest substrate; is there a suitable binary we can pin to here?
+  SUBSTRATE_URL: https://releases.parity.io/substrate/x86_64-debian:stretch/latest/substrate/substrate
+
+jobs:
+  build:
+    name: Cargo check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Download Substrate
+        run: |
+            curl $SUBSTRATE_URL --output substrate --location
+            chmod +x substrate
+            ./substrate --version
+            mkdir -p ~/.local/bin
+            mv substrate ~/.local/bin
+
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@359a70e43a0bb8a13953b04a90f76428b4959bb6 # v2.2.0
+
+      - name: Install cargo-hack
+        uses: baptiste0928/cargo-install@v1
+        with:
+          crate: cargo-hack
+          version: 0.5
+
+      - name: Cargo check
+        run: cargo hack --exclude-all-features --each-feature check --all-targets --workspace
+
+  fmt:
+    name: Cargo fmt
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install Rust nightly toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            profile: minimal
+            toolchain: nightly
+            override: true
+            components: rustfmt
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@359a70e43a0bb8a13953b04a90f76428b4959bb6 # v2.2.0
+
+      - name: Cargo fmt
+        uses: actions-rs/cargo@v1.0.3
+        with:
+          command: fmt
+          args: --all -- --check
+
+  docs:
+    name: Check documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Download Substrate
+        run: |
+            curl $SUBSTRATE_URL --output substrate --location
+            chmod +x substrate
+            ./substrate --version
+            mkdir -p ~/.local/bin
+            mv substrate ~/.local/bin
+
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@359a70e43a0bb8a13953b04a90f76428b4959bb6 # v2.2.0
+
+      - name: Check internal documentation links
+        run: RUSTDOCFLAGS="--deny rustdoc::broken_intra_doc_links" cargo doc -vv --workspace --no-deps --document-private-items
+
+      - name: Run cargo test on documentation
+        uses: actions-rs/cargo@v1.0.3
+        with:
+            command: test
+            args: --doc
+
+  tests:
+    name: Cargo test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Download Substrate
+        run: |
+            curl $SUBSTRATE_URL --output substrate --location
+            chmod +x substrate
+            ./substrate --version
+            mkdir -p ~/.local/bin
+            mv substrate ~/.local/bin
+
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@359a70e43a0bb8a13953b04a90f76428b4959bb6 # v2.2.0
+
+      - name: Cargo test
+        uses: actions-rs/cargo@v1.0.3
+        with:
+          command: test
+          args: --all-targets --workspace
+
+  clippy:
+    name: Cargo clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Download Substrate
+        run: |
+            curl $SUBSTRATE_URL --output substrate --location
+            chmod +x substrate
+            ./substrate --version
+            mkdir -p ~/.local/bin
+            mv substrate ~/.local/bin
+
+      - name: Install Rust stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+            profile: minimal
+            toolchain: stable
+            components: clippy
+            override: true
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@359a70e43a0bb8a13953b04a90f76428b4959bb6 # v2.2.0
+
+      - name: Run clippy
+        uses: actions-rs/cargo@v1
+        with:
+          command: clippy
+          args: --all-targets -- -D warnings
+
+  wasm_tests:
+    name: Test wasm
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3.1.0
+
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+    - name: Install firefox
+      uses: browser-actions/setup-firefox@latest
+
+    - name: Install chrome
+      uses: browser-actions/setup-chrome@latest
+
+    - name: Rust Cache
+      uses: Swatinem/rust-cache@359a70e43a0bb8a13953b04a90f76428b4959bb6 # v2.2.0
+
+    - name: Download Substrate
+      run: |
+        curl $SUBSTRATE_URL --output substrate --location
+        chmod +x substrate
+        ./substrate --version
+        mkdir -p ~/.local/bin
+        mv substrate ~/.local/bin
+
+    - name: Run WASM tests
+      run: |
+        substrate --dev --tmp > /dev/null 2>&1 &
+        wasm-pack test --headless --firefox
+        wasm-pack test --headless --chrome
+        pkill substrate
+      working-directory: testing/wasm-tests
